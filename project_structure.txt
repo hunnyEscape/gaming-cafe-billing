@@ -1,0 +1,65 @@
+.
+├── firebase.json
+├── functions
+│   ├── lib
+│   │   ├── config
+│   │   │   ├── constants.js
+│   │   │   └── constants.js.map
+│   │   ├── index.js
+│   │   ├── index.js.map
+│   │   ├── services
+│   │   │   ├── billing
+│   │   │   │   ├── generateBillingJSON.js
+│   │   │   │   ├── generateBillingJSON.js.map
+│   │   │   │   ├── saveHashToBlockchain.js
+│   │   │   │   └── saveHashToBlockchain.js.map
+│   │   │   └── sessions
+│   │   │       ├── endSessionHttp.js
+│   │   │       ├── endSessionHttp.js.map
+│   │   │       ├── startSession.js
+│   │   │       ├── startSession.js.map
+│   │   │       ├── startSessionHttp.js
+│   │   │       └── startSessionHttp.js.map
+│   │   ├── test
+│   │   │   ├── sampleData.js
+│   │   │   └── sampleData.js.map
+│   │   ├── types
+│   │   │   ├── index.js
+│   │   │   └── index.js.map
+│   │   └── utils
+│   │       ├── cryptoUtils.js
+│   │       ├── cryptoUtils.js.map
+│   │       ├── firestore.js
+│   │       ├── firestore.js.map
+│   │       ├── storageUtils.js
+│   │       └── storageUtils.js.map
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── src
+│   │   ├── config
+│   │   │   └── constants.ts
+│   │   ├── index.ts
+│   │   ├── services
+│   │   │   ├── billing
+│   │   │   │   ├── generateBillingJSON.ts
+│   │   │   │   └── saveHashToBlockchain.ts
+│   │   │   └── sessions
+│   │   │       ├── endSessionHttp.ts
+│   │   │       ├── startSession.ts
+│   │   │       └── startSessionHttp.ts
+│   │   ├── test
+│   │   │   └── sampleData.ts
+│   │   ├── types
+│   │   │   └── index.ts
+│   │   └── utils
+│   │       ├── cryptoUtils.ts
+│   │       ├── firestore.ts
+│   │       └── storageUtils.ts
+│   └── tsconfig.json
+├── project_structure.txt
+├── tools
+│   ├── verifyHash.js
+│   └── verifyTransaction.js
+└── userBillings_billing_202504_8WKfuu3Rz4bwFq2ta534dGcDPrJ3_pc01_1744008114557_u0m986.json
+
+18 directories, 44 files
