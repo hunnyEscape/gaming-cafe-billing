@@ -1,7 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { COLLECTIONS, SEAT_STATUS } from '../../config/constants';
-import { Session } from '../../types';
+import { SessionDocument } from '../../types';
 
 /**
  * セッション終了HTTP関数
@@ -95,7 +95,7 @@ export const endSessionHttp = functions.https.onRequest(async (req, res) => {
 			sessionRef = sessionDoc.ref;
 		}
 
-		const sessionData = sessionDoc.data() as Session;
+		const sessionData = sessionDoc.data() as SessionDocument;
 
 		// 既に終了しているセッションの場合はエラー
 		if (!sessionData.active) {
@@ -112,12 +112,14 @@ export const endSessionHttp = functions.https.onRequest(async (req, res) => {
 			const endTime = admin.firestore.Timestamp.now();
 
 			// 利用時間の計算（分単位、切り上げ）
-			const startTimeMs = sessionData.startTime.toMillis();
+			const startTimeMs = sessionData.startTime instanceof admin.firestore.Timestamp 
+				? sessionData.startTime.toMillis() 
+				: new Date(sessionData.startTime as string).getTime();
 			const endTimeMs = endTime.toMillis();
 			const durationMinutes = Math.ceil((endTimeMs - startTimeMs) / (1000 * 60));
 
-			// 料金の計算
-			const amount = durationMinutes * sessionData.pricePerMinute;
+			// 料金の計算 (1時間あたりの料金から分単位の料金を計算)
+			const amount = Math.ceil(durationMinutes * (sessionData.pricePerHour / 60));
 
 			// セッション情報の更新
 			transaction.update(sessionRef, {

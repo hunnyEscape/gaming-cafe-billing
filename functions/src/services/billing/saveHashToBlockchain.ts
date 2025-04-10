@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import { ethers } from 'ethers';
 import { COLLECTIONS, CHAIN_CONFIG } from '../../config/constants';
+import { BillingProof } from '../../types';
 
 /**
  * ブロックチェーンへのハッシュ保存関数
@@ -10,7 +11,7 @@ import { COLLECTIONS, CHAIN_CONFIG } from '../../config/constants';
 export const saveHashToBlockchain = functions.firestore
 	.document(`${COLLECTIONS.BILLING_PROOFS}/{billingId}`)
 	.onCreate(async (snapshot, context) => {
-		const newValue = snapshot.data();
+		const newValue = snapshot.data() as BillingProof;
 
 		// 処理条件チェック（hash存在確認とステータス確認）
 		if (!newValue.hash || newValue.status !== 'pending' || newValue.txId) {

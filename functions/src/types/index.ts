@@ -1,37 +1,69 @@
 import { Timestamp } from 'firebase-admin/firestore';
 
-export interface User {
-  userId: string;
-  displayName: string;
-  email: string;
-  memberUUID: string;
-  membershipType?: string;
-  totalUsageMinutes?: number;
+export interface UserDocument {
+	uid: string;
+	email: string | null;
+	displayName: string | null;
+	photoURL: string | null;
+	createdAt: Timestamp | string;
+	lastLogin: Timestamp | string;
+	registrationCompleted: boolean;
+	registrationCompletedAt?: string;
+	registrationStep?: number;
+
+	// eKYC情報
+	eKYC?: {
+		sessionId?: string;
+		status: string;
+		verifiedAt?: string;
+		lastUpdated?: string;
+	};
+
+	// Stripe情報
+	stripe?: {
+		customerId?: string;
+		paymentMethodId?: string;
+		paymentSetupCompleted?: boolean;
+		createdAt?: string;
+		updatedAt?: string;
+		paymentMethodType?: string;
+		paymentMethodBrand?: string;
+		paymentMethodLast4?: string;
+		paymentStatus?: string;
+		lastPaymentError?: string;
+		lastPaymentErrorAt?: string;
+	};
 }
 
-export interface Seat {
-  seatId: string;
-  name: string;
-  macAddress?: string;
-  ipAddress?: string;
-  status: string;
-  ratePerMinute: number;
-  lastMaintenanceAt?: Timestamp;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+export interface SeatDocument {
+	seatId: string;
+	branchCode: string;
+	branchName: string;
+	seatType: string;
+	seatNumber: number;
+	name: string;
+	ipAddress?: string;
+	ratePerHour: number;
+	status: 'available' | 'in-use' | 'maintenance';
+	availableHours?: {
+		[key: string]: string;
+	};
+	maxAdvanceBookingDays?: number;
+	createdAt: Timestamp | string;
+	updatedAt: Timestamp | string;
 }
 
-export interface Session {
-  sessionId: string;
-  userId: string;
-  seatId: string;
-  startTime: Timestamp;
-  endTime: Timestamp | null;
-  durationMinutes: number;
-  pricePerMinute: number;
-  amount: number;
-  active: boolean;
-  billingId: string | null;
+
+export interface SessionDocument {
+	sessionId: string;
+	userId: string;
+	seatId: string;
+	startTime: Timestamp | string;
+	endTime: Timestamp | string;
+	durationMinutes: number;
+	amount: number;
+	pricePerHour: number;
+	active: boolean;
 }
 
 export interface BillingProof {

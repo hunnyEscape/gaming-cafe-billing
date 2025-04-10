@@ -2,7 +2,7 @@ import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import { COLLECTIONS } from '../../config/constants';
-import { Session } from '../../types';
+import { SessionDocument, UserDocument } from '../../types';
 
 /**
  * 課金データJSON生成関数
@@ -27,7 +27,7 @@ export const generateBillingJSON = functions.firestore
 				throw new Error('セッションが見つかりません');
 			}
 
-			const sessionData = sessionDoc.data() as Session;
+			const sessionData = sessionDoc.data() as SessionDocument;
 
 			// セッションが正常に終了しているか確認
 			if (sessionData.active || !sessionData.endTime) {
@@ -36,12 +36,20 @@ export const generateBillingJSON = functions.firestore
 
 			// ユーザー情報を取得（オプション）
 			const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
-			const userData = userDoc.exists ? userDoc.data() : { membershipType: 'standard' };
+			const userData = userDoc.exists ? userDoc.data() as UserDocument : null;
+			const membershipType = userData?.stripe?.paymentStatus === 'active' ? 'premium' : 'standard';
 
 			// 課金データの生成
 			const billingId = `bill_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-			const startTimeStr = sessionData.startTime.toDate().toISOString();
-			const endTimeStr = sessionData.endTime.toDate().toISOString();
+			
+			// 日時の変換
+			const startTimeStr = sessionData.startTime instanceof admin.firestore.Timestamp 
+				? sessionData.startTime.toDate().toISOString() 
+				: sessionData.startTime.toString();
+				
+			const endTimeStr = sessionData.endTime instanceof admin.firestore.Timestamp 
+				? sessionData.endTime.toDate().toISOString() 
+				: sessionData.endTime.toString();
 
 			// 課金JSONデータ構造
 			const billingJson = {
@@ -53,8 +61,8 @@ export const generateBillingJSON = functions.firestore
 				endTime: endTimeStr,
 				duration: sessionData.durationMinutes,
 				fee: sessionData.amount,
-				timestamp: new Date().toISOString(),
-				memberType: userData?.membershipType || 'standard'
+				timestamp: Date.now(),
+				memberType: membershipType
 			};
 
 			// JSONを文字列に変換
@@ -104,10 +112,14 @@ export const generateBillingJSON = functions.firestore
 			// billingProofsコレクションに保存
 			await db.collection(COLLECTIONS.BILLING_PROOFS).doc(billingId).set(proofData);
 
-			// セッションのbillingIdを更新
-			await db.collection(COLLECTIONS.SESSIONS).doc(sessionId).update({
-				billingId
-			});
+			// セッションのbillingId参照のある場合は更新（新インターフェースではなくなったがバックワードコンパチビリティのため）
+			try {
+				await db.collection(COLLECTIONS.SESSIONS).doc(sessionId).update({
+					billingId
+				});
+			} catch (e) {
+				functions.logger.warn(`SessionDocument does not have billingId field, skipping update.`);
+			}
 
 			// 課金キューの状態を更新
 			await snapshot.ref.update({

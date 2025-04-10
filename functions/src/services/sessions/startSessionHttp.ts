@@ -1,7 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { COLLECTIONS, SEAT_STATUS } from '../../config/constants';
-import { Session, Seat } from '../../types';
+import { SessionDocument, SeatDocument } from '../../types';
 
 /**
  * セッション開始HTTP関数
@@ -82,7 +82,7 @@ export const startSessionHttp = functions.https.onRequest(async (req, res) => {
 			return;
 		}
 
-		const seatData = seatDoc.data() as Seat;
+		const seatData = seatDoc.data() as SeatDocument;
 
 		// 座席が利用可能か確認
 		if (seatData.status !== SEAT_STATUS.AVAILABLE) {
@@ -115,17 +115,16 @@ export const startSessionHttp = functions.https.onRequest(async (req, res) => {
 			const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
 			// 新しいセッションデータを作成
-			const sessionData: Session = {
+			const sessionData: SessionDocument = {
 				sessionId,
 				userId,
 				seatId,
 				startTime: admin.firestore.Timestamp.now(),
-				endTime: null,
+				endTime: null as any, // 初期状態ではnullだが型定義上は必要
 				durationMinutes: 0,
-				pricePerMinute: seatData.ratePerMinute || 10, // デフォルト料金: 10円/分
+				pricePerHour: seatData.ratePerHour || 600, // デフォルト料金: 600円/時間
 				amount: 0,
-				active: true,
-				billingId: null
+				active: true
 			};
 
 			// Firestoreにセッションを追加
