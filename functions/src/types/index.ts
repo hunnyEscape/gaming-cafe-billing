@@ -10,15 +10,6 @@ export interface UserDocument {
 	registrationCompleted: boolean;
 	registrationCompletedAt?: string;
 	registrationStep?: number;
-
-	// eKYC情報
-	eKYC?: {
-		sessionId?: string;
-		status: string;
-		verifiedAt?: string;
-		lastUpdated?: string;
-	};
-
 	// Stripe情報
 	stripe?: {
 		customerId?: string;
@@ -59,12 +50,13 @@ export interface SessionDocument {
 	sessionId: string;
 	userId: string;
 	seatId: string;
+	// JSTで記録されたFirestore Timestamp（UTC+9補正済）
 	startTime: Timestamp | string;
 	endTime: Timestamp | string;
-	durationMinutes: number;
-	amount: number;
 	pricePerHour: number;
 	active: boolean;
+	duration: number;
+	hourBlocks?: number;
 }
 
 export interface BillingProof {

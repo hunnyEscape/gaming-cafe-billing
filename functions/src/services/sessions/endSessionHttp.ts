@@ -146,13 +146,18 @@ export const endSessionHttp = functions.https.onRequest(async (req, res) => {
 				createdAt: admin.firestore.Timestamp.now()
 			});
 
+			const now = new Date();
+			const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+			const pad = (n: number) => n.toString().padStart(2, '0');
+			const jstFormatted = `${jst.getFullYear()}${pad(jst.getMonth() + 1)}${pad(jst.getDate())}-${pad(jst.getHours())}:${pad(jst.getMinutes())}:${pad(jst.getSeconds())}JTC`;
+
 			// 結果を返す
 			return {
 				sessionId: sessionData.sessionId,
 				userId: sessionData.userId,
 				seatId: sessionData.seatId,
 				startTime: sessionData.startTime,
-				endTime: endTime,
+				endTime: jstFormatted,
 				durationMinutes: durationMinutes,
 				hourBlocks: hourBlocks, // 追加
 				amount: amount

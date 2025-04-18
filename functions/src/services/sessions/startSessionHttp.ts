@@ -113,13 +113,17 @@ export const startSessionHttp = functions.https.onRequest(async (req, res) => {
 		const result = await db.runTransaction(async (transaction) => {
 			// 一意のセッションIDを生成
 			const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+			const now = new Date();
+			const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+			const pad = (n: number) => n.toString().padStart(2, '0');
+			const jstFormatted = `${jst.getFullYear()}${pad(jst.getMonth() + 1)}${pad(jst.getDate())}-${pad(jst.getHours())}:${pad(jst.getMinutes())}:${pad(jst.getSeconds())}JTC`;
 
 			// 新しいセッションデータを作成
 			const sessionData: SessionDocument = {
 				sessionId,
 				userId,
 				seatId,
-				startTime: admin.firestore.Timestamp.now(),
+				startTime: jstFormatted,
 				endTime: null as any, // 初期状態ではnullだが型定義上は必要
 				durationMinutes: 0,
 				pricePerHour: seatData.ratePerHour || 600, // デフォルト料金: 600円/時間
