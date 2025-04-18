@@ -993,7 +993,7 @@ export const saveToStorage = async (
 /**
  * Cloud Storageからファイルを読み込む
  * @param path ファイルパス
- * @returns ファイルの内容
+ * @returns ファイルの内
  */
 export const readFromStorage = async (path: string): Promise<Buffer> => {
 	const bucket = admin.storage().bucket();
