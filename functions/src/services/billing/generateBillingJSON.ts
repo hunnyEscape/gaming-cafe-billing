@@ -59,8 +59,7 @@ export const generateBillingJSON = functions.firestore
 				seatId,
 				startTime: startTimeStr,
 				endTime: endTimeStr,
-				duration: sessionData.durationMinutes,
-				fee: sessionData.amount,
+				duration: sessionData.duration,
 				timestamp: Date.now(),
 				memberType: membershipType
 			};
