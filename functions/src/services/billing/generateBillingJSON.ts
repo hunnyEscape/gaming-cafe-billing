@@ -17,7 +17,7 @@ export const generateBillingJSON = functions.firestore
 
 			functions.logger.info(`課金データ生成開始: SessionID=${sessionId}, UserID=${userId}, SeatID=${seatId}`);
 
-			// Firestoreデータベース参照
+			// Firestoreデータベース参
 			const db = admin.firestore();
 
 			// セッション詳細を取得
