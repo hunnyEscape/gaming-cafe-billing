@@ -45,6 +45,7 @@ export interface SeatDocument {
 	ipAddress?: string;
 	ratePerHour: number;
 	status: 'available' | 'in-use' | 'maintenance';
+	hourBlocks?: number;
 	availableHours?: {
 		[key: string]: string;
 	};

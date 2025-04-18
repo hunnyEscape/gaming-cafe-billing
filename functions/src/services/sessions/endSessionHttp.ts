@@ -116,11 +116,11 @@ export const endSessionHttp = functions.https.onRequest(async (req, res) => {
 				? sessionData.startTime.toMillis() 
 				: new Date(sessionData.startTime as string).getTime();
 			const endTimeMs = endTime.toMillis();
+			//const durationMinutes = Math.ceil((endTimeMs - startTimeMs) / (1000 * 60));
+			//const amount = Math.ceil(durationMinutes * (sessionData.pricePerHour / 60));
 			const durationMinutes = Math.ceil((endTimeMs - startTimeMs) / (1000 * 60));
-
-			// 料金の計算 (1時間あたりの料金から分単位の料金を計算)
-			const amount = Math.ceil(durationMinutes * (sessionData.pricePerHour / 60));
-
+			const hourBlocks = Math.ceil(durationMinutes / 60);
+			const amount = hourBlocks * 600; // 1時間ブロックあたり600円
 			// セッション情報の更新
 			transaction.update(sessionRef, {
 				endTime: endTime,
@@ -154,6 +154,7 @@ export const endSessionHttp = functions.https.onRequest(async (req, res) => {
 				startTime: sessionData.startTime,
 				endTime: endTime,
 				durationMinutes: durationMinutes,
+				hourBlocks: hourBlocks, // 追加
 				amount: amount
 			};
 		});
