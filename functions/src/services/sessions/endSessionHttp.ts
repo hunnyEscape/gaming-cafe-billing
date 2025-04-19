@@ -6,11 +6,12 @@ import { SessionDocument } from '../../types';
 /**
  * セッション終了HTTP関数
  */
-export const endSessionHttp = functions.https.onRequest(async (req, res) => {
+const GCF_API_KEY = functions.params.defineSecret('GCF_API_KEY');
+export const endSessionHttp = functions.https.onRequest({ secrets: [GCF_API_KEY] }, async (req, res) => {
 	// CORSヘッダー設定
 	res.set('Access-Control-Allow-Origin', '*');
 	res.set('Access-Control-Allow-Methods', 'GET, POST');
-	res.set('Access-Control-Allow-Headers', 'Content-Type');
+	res.set('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
 
 	// OPTIONS（プリフライト）
 	if (req.method === 'OPTIONS') {
@@ -19,6 +20,10 @@ export const endSessionHttp = functions.https.onRequest(async (req, res) => {
 	}
 	if (req.method !== 'POST') {
 		res.status(405).json({ success: false, error: 'Please use POST.' });
+		return;
+	}
+	if (req.headers['x-api-key'] !== GCF_API_KEY.value()) {
+		res.status(401).json({ success: false, error: 'Invalid API‑Key' });
 		return;
 	}
 
@@ -52,9 +57,13 @@ export const endSessionHttp = functions.https.onRequest(async (req, res) => {
 
 		const result = await db.runTransaction(async tx => {
 			// JST補正済 Timestamp
-			const now = new Date();
-			const jstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-			const endTime = admin.firestore.Timestamp.fromDate(jstDate);
+			//const now = new Date();
+			//const jstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+			//const endTime = admin.firestore.Timestamp.fromDate(jstDate);
+
+			const now = new Date(); // UTCのまま
+			const endTime = admin.firestore.Timestamp.fromDate(now);
+			
 
 			const startMs = (data.startTime as admin.firestore.Timestamp).toMillis();
 			const duration = Math.ceil((endTime.toMillis() - startMs) / 1000);  // 秒単位

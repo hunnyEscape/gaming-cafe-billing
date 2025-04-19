@@ -9,6 +9,7 @@ import { SessionDocument } from '../../types';
  * セッションデータをJSON形式でブロックチェーンに直接保存する関数
  * セッション終了時に呼び出され、セッションデータをAvalanche C-Chainに記録します
  */
+
 export const saveSessionJsonToBlockchain = functions.firestore
 	.document(`${COLLECTIONS.SESSIONS}/{sessionId}`)
 	.onUpdate(async (change, context) => {
@@ -24,19 +25,22 @@ export const saveSessionJsonToBlockchain = functions.firestore
 				functions.logger.info(`ブロックチェーン保存開始: SessionID=${sessionId}`);
 
 				// Timestamp を ISO8601 文字列に変換
-				const toIso = (value: admin.firestore.Timestamp | string): string => {
-					if (value instanceof admin.firestore.Timestamp) {
-						return value.toDate().toISOString();
-					}
-					return typeof value === 'string' ? new Date(value).toISOString() : '';
+				const toJstIso = (value: admin.firestore.Timestamp | string): string => {
+					const date = value instanceof admin.firestore.Timestamp
+						? value.toDate()
+						: new Date(value);
+
+					// JST補正（+9時間）
+					const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+					return jstDate.toISOString().replace('Z', '+09:00');
 				};
 
 				// JSONデータの作成 - 指定された順序で
 				const sessionJson = {
 					sessionId,
 					seatId: after.seatId,
-					startTime: toIso(after.startTime),
-					endTime: toIso(after.endTime),
+					startTime: toJstIso(after.startTime),
+					endTime: toJstIso(after.endTime),
 					hourBlocks: after.hourBlocks || 0
 				};
 

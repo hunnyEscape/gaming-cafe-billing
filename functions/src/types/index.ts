@@ -14,15 +14,10 @@ export interface UserDocument {
 	stripe?: {
 		customerId?: string;
 		paymentMethodId?: string;
+		cardFingerprint?: string; // 追加: カードの一意識別子
+		last4?: string;           // オプション: 下4桁（表示用）
+		brand?: string;           // オプション: カードブランド（表示用
 		paymentSetupCompleted?: boolean;
-		createdAt?: string;
-		updatedAt?: string;
-		paymentMethodType?: string;
-		paymentMethodBrand?: string;
-		paymentMethodLast4?: string;
-		paymentStatus?: string;
-		lastPaymentError?: string;
-		lastPaymentErrorAt?: string;
 	};
 }
 
@@ -45,21 +40,16 @@ export interface SeatDocument {
 	updatedAt: Timestamp | string;
 }
 
-
 export interface SessionDocument {
 	sessionId: string;
 	userId: string;
 	seatId: string;
-
-	// JST で記録された Firestore Timestamp（UTC+9補正済）
 	startTime: Timestamp | string;
 	endTime: Timestamp | string;
-
 	pricePerHour: number;
 	active: boolean;
 	duration: number;
 	hourBlocks: number;
-
 	// --- Blockchain 保存ステータス ---
 	blockchainStatus: 'pending' | 'confirmed' | 'error';
 	blockchainTxId: string | null;        // トランザクションハッシュ
@@ -69,7 +59,6 @@ export interface SessionDocument {
 	blockchainNetworkId: number | null;   // ネットワーク ID
 	blockchainErrorMessage: string | null; // エラー詳細（任意）
 }
-
 
 export interface BillingProof {
 	billingId: string;
