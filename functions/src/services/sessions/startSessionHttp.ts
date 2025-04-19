@@ -66,8 +66,6 @@ export const startSessionHttp = functions.https.onRequest(async (req, res) => {
 			const jstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 			const startTime = admin.firestore.Timestamp.fromDate(jstDate);
 
-			const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
-
 			const sessionData: SessionDocument = {
 				sessionId,
 				userId,
@@ -78,10 +76,6 @@ export const startSessionHttp = functions.https.onRequest(async (req, res) => {
 				active: true,
 				duration: 0,
 				hourBlocks: 0,
-				// JSON保存メタ
-				storageUrl: '',
-				jsonHash: '',
-				jsonSavedAt: admin.firestore.Timestamp.fromDate(jstNow),
 				// Blockchainステータス
 				blockchainStatus: 'pending',
 				blockchainTxId: null,

@@ -60,11 +60,6 @@ export interface SessionDocument {
 	duration: number;
 	hourBlocks: number;
 
-	// --- JSON 保存メタ情報 ---
-	storageUrl: string;            // Cloud Storage のファイルパスまたはダウンロード URL
-	jsonHash: string;              // SHA256(JSON)
-	jsonSavedAt: Timestamp;        // JSON 保存タイムスタンプ
-
 	// --- Blockchain 保存ステータス ---
 	blockchainStatus: 'pending' | 'confirmed' | 'error';
 	blockchainTxId: string | null;        // トランザクションハッシュ

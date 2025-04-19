@@ -2,7 +2,6 @@
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import { ethers } from 'ethers';
-import * as crypto from 'crypto';
 import { COLLECTIONS, CHAIN_CONFIG } from '../../config/constants';
 import { SessionDocument } from '../../types';
 
@@ -35,7 +34,6 @@ export const saveSessionJsonToBlockchain = functions.firestore
 				// JSONデータの作成 - 指定された順序で
 				const sessionJson = {
 					sessionId,
-					userId: after.userId,
 					seatId: after.seatId,
 					startTime: toIso(after.startTime),
 					endTime: toIso(after.endTime),
@@ -44,9 +42,6 @@ export const saveSessionJsonToBlockchain = functions.firestore
 
 				// JSON文字列化
 				const jsonString = JSON.stringify(sessionJson);
-
-				// SHA256ハッシュ計算
-				const jsonHash = crypto.createHash('sha256').update(jsonString).digest('hex');
 
 				// プライベートキーを環境変数から取得
 				const privateKey = functions.config().avalanche?.privatekey;
@@ -81,7 +76,6 @@ export const saveSessionJsonToBlockchain = functions.firestore
 				// セッションドキュメントの更新
 				const sessionRef = db.collection(COLLECTIONS.SESSIONS).doc(sessionId);
 				await sessionRef.update({
-					jsonHash,
 					blockchainStatus: 'confirmed',
 					blockchainTxId: receipt.transactionHash,
 					blockchainBlockNumber: receipt.blockNumber,

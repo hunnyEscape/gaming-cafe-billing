@@ -4,11 +4,7 @@ import * as admin from 'firebase-admin';
 admin.initializeApp();
 
 // セッション関連の関数をエクスポート
-//export { startSession } from './services/sessions/startSession';
 export { startSessionHttp } from './services/sessions/startSessionHttp';
 export { endSessionHttp } from './services/sessions/endSessionHttp';
-export { saveSessionJsonToBlockchain } from './services/billing/saveSessionJsonToBlockchain';
-//export { generateBillingJSON } from './services/billing/generateBillingJSON';
-//export { saveHashToBlockchain } from './services/billing/saveHashToBlockchain';
-//export { saveSessionJson } from './services/billing/saveSessionJson';
-//export {saveSessionHashToBlockchain} from './services/billing/saveSessionHashToBlockchain';
+export { saveSessionJsonToBlockchain } from './services/sessions/saveSessionJsonToBlockchain';
+export { unlockDoor } from './services/door/unlockDoor';
