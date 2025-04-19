@@ -58,25 +58,39 @@ export const endSessionHttp = functions.https.onRequest(async (req, res) => {
 
 			const startMs = (data.startTime as admin.firestore.Timestamp).toMillis();
 			const duration = Math.ceil((endTime.toMillis() - startMs) / 1000);  // 秒単位
-			const hourBlocks = Math.ceil(duration / 3600);  
+			const hourBlocks = Math.ceil(duration / 3600);
 
-			tx.update(ref, { endTime, duration, hourBlocks, active: false });
+			// セッションを終了ステータスに更新（blockchainStatus=pendingを追加）
+			tx.update(ref, {
+				endTime,
+				duration,
+				hourBlocks,
+				active: false,
+				blockchainStatus: 'pending' // ブロックチェーン保存待ちステータス
+			});
+
+			// 座席を利用可能に戻す
 			tx.update(db.collection(COLLECTIONS.SEATS).doc(data.seatId), {
 				status: SEAT_STATUS.AVAILABLE,
 				updatedAt: admin.firestore.Timestamp.now()
 			});
-			tx.set(db.collection(COLLECTIONS.BILLING_QUEUE).doc(), {
+
+			return {
 				sessionId: data.sessionId,
 				userId: data.userId,
 				seatId: data.seatId,
-				status: 'pending',
-				createdAt: admin.firestore.Timestamp.now()
-			});
-
-			return { sessionId: data.sessionId, userId: data.userId, seatId: data.seatId, startTime: data.startTime, endTime, duration, hourBlocks };
+				startTime: data.startTime,
+				endTime,
+				duration,
+				hourBlocks
+			};
 		});
 
-		res.status(200).json({ success: true, message: 'Session ended.', session: result });
+		res.status(200).json({
+			success: true,
+			message: 'Session ended. Blockchain storage will be performed automatically.',
+			session: result
+		});
 	} catch (e) {
 		functions.logger.error('endSessionHttp error:', e);
 		res.status(500).json({ success: false, error: (e as Error).message });

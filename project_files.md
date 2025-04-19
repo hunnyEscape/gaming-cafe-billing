@@ -146,6 +146,82 @@ export const generateBillingJSON = functions.firestore
 			throw error;
 		}
 	});
+### FILE: ./functions/src/services/billing/saveSessionHashToBlockchain.ts
+import * as functions from 'firebase-functions/v1';
+import * as admin from 'firebase-admin';
+import { ethers } from 'ethers';
+import { COLLECTIONS, CHAIN_CONFIG } from '../../config/constants';
+import { SessionDocument } from '../../types';
+
+/**
+ * セッション更新トリガー → ブロックチェーン埋め込み
+ */
+export const saveSessionHashToBlockchain = functions.firestore
+	.document(`${COLLECTIONS.SESSIONS}/{sessionId}`)
+	.onUpdate(async (change, context) => {
+		const before = change.before.data() as Partial<SessionDocument>;
+		const after = change.after.data() as SessionDocument;
+		const sessionId = context.params.sessionId;
+
+		// ステータス遷移確認: pending で txId 未セット → 処理開始
+		if (
+			before.blockchainStatus === 'pending' &&
+			after.blockchainStatus === 'pending' &&
+			!after.blockchainTxId
+		) {
+			const db = admin.firestore();
+			const sessionRef = db.collection(COLLECTIONS.SESSIONS).doc(sessionId);
+
+			try {
+				// Provider & Wallet 初期化
+				const privateKey = functions.config().avalanche?.privatekey;
+				if (!privateKey) throw new Error('Avalanche private key not configured');
+				const provider = new ethers.providers.JsonRpcProvider(CHAIN_CONFIG.RPC_ENDPOINT);
+				const wallet = new ethers.Wallet(privateKey, provider);
+
+				// データペイロード作成
+				//const payload = JSON.stringify({
+				//	sessionId,
+				//	hash: after.jsonHash,
+				//	timestamp: Date.now(),
+				//});
+				//const payload = after.jsonHash;
+				// トランザクション送信
+				const payload = after.jsonHash.startsWith('0x') ? after.jsonHash : '0x' + after.jsonHash;
+				const tx = await wallet.sendTransaction({
+					to: wallet.address,
+					value: ethers.utils.parseEther('0'),
+					data: ethers.utils.hexlify(ethers.utils.toUtf8Bytes(payload)),
+					gasLimit: 100000,
+				});
+
+				// 1ブロック確認
+				const receipt = await tx.wait(1);
+
+				// 成功時、Session を更新
+				await sessionRef.update({
+					blockchainStatus: 'confirmed',
+					blockchainTxId: receipt.transactionHash,
+					blockchainBlockNumber: receipt.blockNumber,
+					blockchainConfirmedAt: admin.firestore.Timestamp.now(),
+					blockchainChainId: CHAIN_CONFIG.CHAIN_ID,
+					blockchainNetworkId: CHAIN_CONFIG.NETWORK_ID,
+				});
+
+				return { success: true };
+			} catch (error) {
+				// エラー時、Session を更新
+				await sessionRef.update({
+					blockchainStatus: 'error',
+					blockchainErrorMessage: error instanceof Error ? error.message : String(error),
+					blockchainConfirmedAt: admin.firestore.Timestamp.now(),
+				});
+				throw error;
+			}
+		}
+		return null;
+	});
+
 ### FILE: ./functions/src/services/billing/saveHashToBlockchain.ts
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
@@ -253,8 +329,11 @@ import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import { COLLECTIONS } from '../../config/constants';
-import { SessionDocument, UserDocument } from '../../types';
+import { SessionDocument } from '../../types';
 
+/**
+ * セッション JSON 保存 & Session ドキュメントにメタ情報を追加
+ */
 export const saveSessionJson = functions.firestore
 	.document(`${COLLECTIONS.BILLING_QUEUE}/{docId}`)
 	.onCreate(async (snapshot, context) => {
@@ -265,104 +344,80 @@ export const saveSessionJson = functions.firestore
 				seatId: string;
 			};
 
-			functions.logger.info(
-				`セッションデータJSON生成開始: SessionID=${sessionId}, UserID=${userId}, SeatID=${seatId}`
-			);
-
 			const db = admin.firestore();
+			const sessionRef = db.collection(COLLECTIONS.SESSIONS).doc(sessionId);
+			const sessionSnap = await sessionRef.get();
+			if (!sessionSnap.exists) throw new Error('Session not found');
 
-			// セッション詳細を取得
-			const sessionDoc = await db.collection(COLLECTIONS.SESSIONS).doc(sessionId).get();
-			if (!sessionDoc.exists) throw new Error('セッションが見つかりません');
-			const sessionData = sessionDoc.data() as SessionDocument;
-
-			// 終了チェック
+			const sessionData = sessionSnap.data() as SessionDocument;
 			if (sessionData.active || !sessionData.endTime) {
-				throw new Error('セッションがまだ終了していません');
+				throw new Error('Session has not ended yet');
 			}
 
-			// ユーザー情報取得（オプション）
-			const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
-			const userData = userDoc.exists ? (userDoc.data() as UserDocument) : null;
-			const membershipType =
-				userData?.stripe?.paymentStatus === 'active' ? 'premium' : 'standard';
+			// Timestamp を ISO8601 文字列に統一
+			const toIso = (value: admin.firestore.Timestamp | string): string => {
+				if (value instanceof admin.firestore.Timestamp) {
+					return value.toDate().toISOString();
+				}
+				return typeof value === 'string' ? new Date(value).toISOString() : '';
+			};
 
-			// JSON 構造の生成
-			const billingJson = {
+			// キーをソートして一貫性を担保
+			const sessionJson: Record<string, any> = {
 				sessionId,
 				userId,
 				seatId,
-				startTime:
-					sessionData.startTime instanceof admin.firestore.Timestamp
-						? sessionData.startTime.toDate().toISOString()
-						: sessionData.startTime,
-				endTime:
-					sessionData.endTime instanceof admin.firestore.Timestamp
-						? sessionData.endTime.toDate().toISOString()
-						: sessionData.endTime,
-				duration: sessionData.duration,          // ← 新フィールド
-				hourBlocks: sessionData.hourBlocks ?? 0, // ← 新フィールド
-				memberType: membershipType,
-				timestamp: Date.now()
+				startTime: toIso(sessionData.startTime),
+				endTime: toIso(sessionData.endTime),
+				duration: sessionData.duration,
+				hourBlocks: sessionData.hourBlocks || 0
 			};
+			const orderedKeys = Object.keys(sessionJson).sort();
+			const canonicalJson = orderedKeys.reduce((obj, key) => {
+				obj[key] = sessionJson[key];
+				return obj;
+			}, {} as Record<string, any>);
 
-			const jsonString = JSON.stringify(billingJson, null, 2);
-
-			// ファイル名・パスを JST で生成
-			const now = new Date();
-			const jstString = now
-				.toLocaleString('ja-JP', {
-					timeZone: 'Asia/Tokyo',
-					year: 'numeric',
-					month: '2-digit',
-					day: '2-digit',
-					hour: '2-digit',
-					minute: '2-digit',
-					second: '2-digit',
-					hour12: false
-				})
-				.replace(/[\/\s:]/g, '');
-
-			const fileName = `${jstString}_${sessionId}.json`;
-			const storagePath = `sessionLog/${userId}/${fileName}`;
+			// Minify (空白改行なし)
+			const jsonString = JSON.stringify(canonicalJson);
 
 			// Cloud Storage に保存
 			const bucket = admin.storage().bucket();
+			const storagePath = `sessionLog/${userId}/${sessionId}.json`;
 			await bucket.file(storagePath).save(jsonString, {
-				contentType: 'application/json',
-				metadata: { userId, sessionId }
+				contentType: 'application/json'
 			});
 
-			// SHA256 ハッシュ
-			const hashValue = crypto.createHash('sha256').update(jsonString).digest('hex');
+			// SHA256 ハッシュ計算
+			const jsonHash = crypto.createHash('sha256').update(jsonString).digest('hex');
+			const now = admin.firestore.Timestamp.now();
 
-			// Proofs コレクションに保存
-			const proofData = {
-				sessionId,
-				userId,
-				seatId,
-				fileUrl: storagePath,
-				hash: hashValue,
-				status: 'pending',
-				createdAt: admin.firestore.Timestamp.now()
-			};
-			await db.collection(COLLECTIONS.BILLING_PROOFS).doc(sessionId).set(proofData);
+			// Session ドキュメントに更新
+			await sessionRef.update({
+				storageUrl: storagePath,
+				jsonHash,
+				jsonSavedAt: now,
+				blockchainStatus: 'pending',
+				blockchainTxId: null,
+				blockchainBlockNumber: null,
+				blockchainConfirmedAt: null,
+				blockchainChainId: null,
+				blockchainNetworkId: null
+			});
 
-			// キューの状態更新
+			// billingQueue 側ステータス更新
 			await snapshot.ref.update({
 				status: 'processed',
-				hashValue,
-				updatedAt: admin.firestore.Timestamp.now()
+				updatedAt: now
 			});
 
-			functions.logger.info(`JSON生成完了: SessionID=${sessionId}, Hash=${hashValue}`);
-			return { success: true, hashValue };
+			return { success: true };
 		} catch (error) {
-			functions.logger.error('JSON生成エラー:', error instanceof Error ? error.message : String(error));
+			const now = admin.firestore.Timestamp.now();
 			await snapshot.ref.update({
 				status: 'error',
 				errorMessage: error instanceof Error ? error.message : String(error),
-				updatedAt: admin.firestore.Timestamp.now()
+				updatedAt: now
 			});
 			throw error;
 		}
@@ -523,6 +578,8 @@ export const startSessionHttp = functions.https.onRequest(async (req, res) => {
 			const jstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 			const startTime = admin.firestore.Timestamp.fromDate(jstDate);
 
+			const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+
 			const sessionData: SessionDocument = {
 				sessionId,
 				userId,
@@ -531,8 +588,21 @@ export const startSessionHttp = functions.https.onRequest(async (req, res) => {
 				endTime: '',
 				pricePerHour: seatData.ratePerHour || 600,
 				active: true,
-				duration: 0
-			};
+				duration: 0,
+				hourBlocks: 0,
+				// JSON保存メタ
+				storageUrl: '',
+				jsonHash: '',
+				jsonSavedAt: admin.firestore.Timestamp.fromDate(jstNow),
+				// Blockchainステータス
+				blockchainStatus: 'pending',
+				blockchainTxId: null,
+				blockchainBlockNumber: null,
+				blockchainConfirmedAt: null,
+				blockchainChainId: null,
+				blockchainNetworkId: null,
+				blockchainErrorMessage: null,
+			  };
 
 			const sessionRef = db.collection(COLLECTIONS.SESSIONS).doc(sessionId);
 			tx.set(sessionRef, sessionData);
@@ -601,41 +671,58 @@ export interface SessionDocument {
 	sessionId: string;
 	userId: string;
 	seatId: string;
-	// JSTで記録されたFirestore Timestamp（UTC+9補正済）
+
+	// JST で記録された Firestore Timestamp（UTC+9補正済）
 	startTime: Timestamp | string;
 	endTime: Timestamp | string;
+
 	pricePerHour: number;
 	active: boolean;
 	duration: number;
-	hourBlocks?: number;
+	hourBlocks: number;
+
+	// --- JSON 保存メタ情報 ---
+	storageUrl: string;            // Cloud Storage のファイルパスまたはダウンロード URL
+	jsonHash: string;              // SHA256(JSON)
+	jsonSavedAt: Timestamp;        // JSON 保存タイムスタンプ
+
+	// --- Blockchain 保存ステータス ---
+	blockchainStatus: 'pending' | 'confirmed' | 'error';
+	blockchainTxId: string | null;        // トランザクションハッシュ
+	blockchainBlockNumber: number | null; // ブロック番号
+	blockchainConfirmedAt: Timestamp | null; // 確定タイムスタンプ
+	blockchainChainId: string | null;     // チェーン ID
+	blockchainNetworkId: number | null;   // ネットワーク ID
+	blockchainErrorMessage: string | null; // エラー詳細（任意）
 }
 
+
 export interface BillingProof {
-  billingId: string;
-  userId: string;
-  sessionId: string;
-  seatId: string;
-  fileUrl: string;
-  hash: string;
-  chainId: string;
-  networkId: number;
-  txId: string | null;
-  blockNumber: number | null;
-  status: string;
-  createdAt: Timestamp;
-  confirmedAt: Timestamp | null;
+	billingId: string;
+	userId: string;
+	sessionId: string;
+	seatId: string;
+	fileUrl: string;
+	hash: string;
+	chainId: string;
+	networkId: number;
+	txId: string | null;
+	blockNumber: number | null;
+	status: string;
+	createdAt: Timestamp;
+	confirmedAt: Timestamp | null;
 }
 
 export interface BillingQueueItem {
-  sessionId: string;
-  userId: string;
-  seatId: string;
-  status: string;
-  createdAt: Timestamp;
-  billingId?: string;
-  hashValue?: string;
-  updatedAt?: Timestamp;
-  errorMessage?: string;
+	sessionId: string;
+	userId: string;
+	seatId: string;
+	status: string;
+	createdAt: Timestamp;
+	billingId?: string;
+	hashValue?: string;
+	updatedAt?: Timestamp;
+	errorMessage?: string;
 }
 ### FILE: ./functions/src/config/constants.ts
 export const COLLECTIONS = {
@@ -884,9 +971,105 @@ admin.initializeApp();
 //export { startSession } from './services/sessions/startSession';
 export { startSessionHttp } from './services/sessions/startSessionHttp';
 export { endSessionHttp } from './services/sessions/endSessionHttp';
-export { generateBillingJSON } from './services/billing/generateBillingJSON';
-export { saveHashToBlockchain } from './services/billing/saveHashToBlockchain';
+//export { generateBillingJSON } from './services/billing/generateBillingJSON';
+//export { saveHashToBlockchain } from './services/billing/saveHashToBlockchain';
 export { saveSessionJson } from './services/billing/saveSessionJson';
+export {saveSessionHashToBlockchain} from './services/billing/saveSessionHashToBlockchain';
+### FILE: ./functions/lib/services/billing/saveSessionHashToBlockchain.js
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.saveSessionHashToBlockchain = void 0;
+const functions = __importStar(require("firebase-functions/v1"));
+const admin = __importStar(require("firebase-admin"));
+const ethers_1 = require("ethers");
+const constants_1 = require("../../config/constants");
+/**
+ * セッション更新トリガー → ブロックチェーン埋め込み
+ */
+exports.saveSessionHashToBlockchain = functions.firestore
+    .document(`${constants_1.COLLECTIONS.SESSIONS}/{sessionId}`)
+    .onUpdate(async (change, context) => {
+    var _a;
+    const before = change.before.data();
+    const after = change.after.data();
+    const sessionId = context.params.sessionId;
+    // ステータス遷移確認: pending で txId 未セット → 処理開始
+    if (before.blockchainStatus === 'pending' &&
+        after.blockchainStatus === 'pending' &&
+        !after.blockchainTxId) {
+        const db = admin.firestore();
+        const sessionRef = db.collection(constants_1.COLLECTIONS.SESSIONS).doc(sessionId);
+        try {
+            // Provider & Wallet 初期化
+            const privateKey = (_a = functions.config().avalanche) === null || _a === void 0 ? void 0 : _a.privatekey;
+            if (!privateKey)
+                throw new Error('Avalanche private key not configured');
+            const provider = new ethers_1.ethers.providers.JsonRpcProvider(constants_1.CHAIN_CONFIG.RPC_ENDPOINT);
+            const wallet = new ethers_1.ethers.Wallet(privateKey, provider);
+            // データペイロード作成
+            //const payload = JSON.stringify({
+            //	sessionId,
+            //	hash: after.jsonHash,
+            //	timestamp: Date.now(),
+            //});
+            //const payload = after.jsonHash;
+            // トランザクション送信
+            const payload = after.jsonHash.startsWith('0x') ? after.jsonHash : '0x' + after.jsonHash;
+            const tx = await wallet.sendTransaction({
+                to: wallet.address,
+                value: ethers_1.ethers.utils.parseEther('0'),
+                data: ethers_1.ethers.utils.hexlify(ethers_1.ethers.utils.toUtf8Bytes(payload)),
+                gasLimit: 100000,
+            });
+            // 1ブロック確認
+            const receipt = await tx.wait(1);
+            // 成功時、Session を更新
+            await sessionRef.update({
+                blockchainStatus: 'confirmed',
+                blockchainTxId: receipt.transactionHash,
+                blockchainBlockNumber: receipt.blockNumber,
+                blockchainConfirmedAt: admin.firestore.Timestamp.now(),
+                blockchainChainId: constants_1.CHAIN_CONFIG.CHAIN_ID,
+                blockchainNetworkId: constants_1.CHAIN_CONFIG.NETWORK_ID,
+            });
+            return { success: true };
+        }
+        catch (error) {
+            // エラー時、Session を更新
+            await sessionRef.update({
+                blockchainStatus: 'error',
+                blockchainErrorMessage: error instanceof Error ? error.message : String(error),
+                blockchainConfirmedAt: admin.firestore.Timestamp.now(),
+            });
+            throw error;
+        }
+    }
+    return null;
+});
+//# sourceMappingURL=saveSessionHashToBlockchain.js.map
 ### FILE: ./functions/lib/services/billing/saveHashToBlockchain.js
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
@@ -1028,94 +1211,81 @@ const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 const crypto = __importStar(require("crypto"));
 const constants_1 = require("../../config/constants");
+/**
+ * セッション JSON 保存 & Session ドキュメントにメタ情報を追加
+ */
 exports.saveSessionJson = functions.firestore
     .document(`${constants_1.COLLECTIONS.BILLING_QUEUE}/{docId}`)
     .onCreate(async (snapshot, context) => {
-    var _a, _b;
     try {
         const { sessionId, userId, seatId } = snapshot.data();
-        functions.logger.info(`セッションデータJSON生成開始: SessionID=${sessionId}, UserID=${userId}, SeatID=${seatId}`);
         const db = admin.firestore();
-        // セッション詳細を取得
-        const sessionDoc = await db.collection(constants_1.COLLECTIONS.SESSIONS).doc(sessionId).get();
-        if (!sessionDoc.exists)
-            throw new Error('セッションが見つかりません');
-        const sessionData = sessionDoc.data();
-        // 終了チェック
+        const sessionRef = db.collection(constants_1.COLLECTIONS.SESSIONS).doc(sessionId);
+        const sessionSnap = await sessionRef.get();
+        if (!sessionSnap.exists)
+            throw new Error('Session not found');
+        const sessionData = sessionSnap.data();
         if (sessionData.active || !sessionData.endTime) {
-            throw new Error('セッションがまだ終了していません');
+            throw new Error('Session has not ended yet');
         }
-        // ユーザー情報取得（オプション）
-        const userDoc = await db.collection(constants_1.COLLECTIONS.USERS).doc(userId).get();
-        const userData = userDoc.exists ? userDoc.data() : null;
-        const membershipType = ((_a = userData === null || userData === void 0 ? void 0 : userData.stripe) === null || _a === void 0 ? void 0 : _a.paymentStatus) === 'active' ? 'premium' : 'standard';
-        // JSON 構造の生成
-        const billingJson = {
+        // Timestamp を ISO8601 文字列に統一
+        const toIso = (value) => {
+            if (value instanceof admin.firestore.Timestamp) {
+                return value.toDate().toISOString();
+            }
+            return typeof value === 'string' ? new Date(value).toISOString() : '';
+        };
+        // キーをソートして一貫性を担保
+        const sessionJson = {
             sessionId,
             userId,
             seatId,
-            startTime: sessionData.startTime instanceof admin.firestore.Timestamp
-                ? sessionData.startTime.toDate().toISOString()
-                : sessionData.startTime,
-            endTime: sessionData.endTime instanceof admin.firestore.Timestamp
-                ? sessionData.endTime.toDate().toISOString()
-                : sessionData.endTime,
+            startTime: toIso(sessionData.startTime),
+            endTime: toIso(sessionData.endTime),
             duration: sessionData.duration,
-            hourBlocks: (_b = sessionData.hourBlocks) !== null && _b !== void 0 ? _b : 0,
-            memberType: membershipType,
-            timestamp: Date.now()
+            hourBlocks: sessionData.hourBlocks || 0
         };
-        const jsonString = JSON.stringify(billingJson, null, 2);
-        // ファイル名・パスを JST で生成
-        const now = new Date();
-        const jstString = now
-            .toLocaleString('ja-JP', {
-            timeZone: 'Asia/Tokyo',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
-        })
-            .replace(/[\/\s:]/g, '');
-        const fileName = `${jstString}_${sessionId}.json`;
-        const storagePath = `sessionLog/${userId}/${fileName}`;
+        const orderedKeys = Object.keys(sessionJson).sort();
+        const canonicalJson = orderedKeys.reduce((obj, key) => {
+            obj[key] = sessionJson[key];
+            return obj;
+        }, {});
+        // Minify (空白改行なし)
+        const jsonString = JSON.stringify(canonicalJson);
         // Cloud Storage に保存
         const bucket = admin.storage().bucket();
+        const storagePath = `sessionLog/${userId}/${sessionId}.json`;
         await bucket.file(storagePath).save(jsonString, {
-            contentType: 'application/json',
-            metadata: { userId, sessionId }
+            contentType: 'application/json'
         });
-        // SHA256 ハッシュ
-        const hashValue = crypto.createHash('sha256').update(jsonString).digest('hex');
-        // Proofs コレクションに保存
-        const proofData = {
-            sessionId,
-            userId,
-            seatId,
-            fileUrl: storagePath,
-            hash: hashValue,
-            status: 'pending',
-            createdAt: admin.firestore.Timestamp.now()
-        };
-        await db.collection(constants_1.COLLECTIONS.BILLING_PROOFS).doc(sessionId).set(proofData);
-        // キューの状態更新
+        // SHA256 ハッシュ計算
+        const jsonHash = crypto.createHash('sha256').update(jsonString).digest('hex');
+        const now = admin.firestore.Timestamp.now();
+        // Session ドキュメントに更新
+        await sessionRef.update({
+            storageUrl: storagePath,
+            jsonHash,
+            jsonSavedAt: now,
+            blockchainStatus: 'pending',
+            blockchainTxId: null,
+            blockchainBlockNumber: null,
+            blockchainConfirmedAt: null,
+            blockchainChainId: null,
+            blockchainNetworkId: null
+        });
+        // billingQueue 側ステータス更新
         await snapshot.ref.update({
             status: 'processed',
-            hashValue,
-            updatedAt: admin.firestore.Timestamp.now()
+            updatedAt: now
         });
-        functions.logger.info(`JSON生成完了: SessionID=${sessionId}, Hash=${hashValue}`);
-        return { success: true, hashValue };
+        return { success: true };
     }
     catch (error) {
-        functions.logger.error('JSON生成エラー:', error instanceof Error ? error.message : String(error));
+        const now = admin.firestore.Timestamp.now();
         await snapshot.ref.update({
             status: 'error',
             errorMessage: error instanceof Error ? error.message : String(error),
-            updatedAt: admin.firestore.Timestamp.now()
+            updatedAt: now
         });
         throw error;
     }
@@ -1358,6 +1528,7 @@ exports.startSessionHttp = functions.https.onRequest(async (req, res) => {
             const now = new Date();
             const jstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
             const startTime = admin.firestore.Timestamp.fromDate(jstDate);
+            const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
             const sessionData = {
                 sessionId,
                 userId,
@@ -1366,7 +1537,20 @@ exports.startSessionHttp = functions.https.onRequest(async (req, res) => {
                 endTime: '',
                 pricePerHour: seatData.ratePerHour || 600,
                 active: true,
-                duration: 0
+                duration: 0,
+                hourBlocks: 0,
+                // JSON保存メタ
+                storageUrl: '',
+                jsonHash: '',
+                jsonSavedAt: admin.firestore.Timestamp.fromDate(jstNow),
+                // Blockchainステータス
+                blockchainStatus: 'pending',
+                blockchainTxId: null,
+                blockchainBlockNumber: null,
+                blockchainConfirmedAt: null,
+                blockchainChainId: null,
+                blockchainNetworkId: null,
+                blockchainErrorMessage: null,
             };
             const sessionRef = db.collection(constants_1.COLLECTIONS.SESSIONS).doc(sessionId);
             tx.set(sessionRef, sessionData);
@@ -1642,7 +1826,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.saveSessionJson = exports.saveHashToBlockchain = exports.generateBillingJSON = exports.endSessionHttp = exports.startSessionHttp = void 0;
+exports.saveSessionHashToBlockchain = exports.saveSessionJson = exports.endSessionHttp = exports.startSessionHttp = void 0;
 const admin = __importStar(require("firebase-admin"));
 // Firebase初期化
 admin.initializeApp();
@@ -1652,12 +1836,12 @@ var startSessionHttp_1 = require("./services/sessions/startSessionHttp");
 Object.defineProperty(exports, "startSessionHttp", { enumerable: true, get: function () { return startSessionHttp_1.startSessionHttp; } });
 var endSessionHttp_1 = require("./services/sessions/endSessionHttp");
 Object.defineProperty(exports, "endSessionHttp", { enumerable: true, get: function () { return endSessionHttp_1.endSessionHttp; } });
-var generateBillingJSON_1 = require("./services/billing/generateBillingJSON");
-Object.defineProperty(exports, "generateBillingJSON", { enumerable: true, get: function () { return generateBillingJSON_1.generateBillingJSON; } });
-var saveHashToBlockchain_1 = require("./services/billing/saveHashToBlockchain");
-Object.defineProperty(exports, "saveHashToBlockchain", { enumerable: true, get: function () { return saveHashToBlockchain_1.saveHashToBlockchain; } });
+//export { generateBillingJSON } from './services/billing/generateBillingJSON';
+//export { saveHashToBlockchain } from './services/billing/saveHashToBlockchain';
 var saveSessionJson_1 = require("./services/billing/saveSessionJson");
 Object.defineProperty(exports, "saveSessionJson", { enumerable: true, get: function () { return saveSessionJson_1.saveSessionJson; } });
+var saveSessionHashToBlockchain_1 = require("./services/billing/saveSessionHashToBlockchain");
+Object.defineProperty(exports, "saveSessionHashToBlockchain", { enumerable: true, get: function () { return saveSessionHashToBlockchain_1.saveSessionHashToBlockchain; } });
 //# sourceMappingURL=index.js.map
 ### FILE: ./functions/lib/config/constants.js
 "use strict";

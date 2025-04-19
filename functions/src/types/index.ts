@@ -50,14 +50,31 @@ export interface SessionDocument {
 	sessionId: string;
 	userId: string;
 	seatId: string;
-	// JSTで記録されたFirestore Timestamp（UTC+9補正済）
+
+	// JST で記録された Firestore Timestamp（UTC+9補正済）
 	startTime: Timestamp | string;
 	endTime: Timestamp | string;
+
 	pricePerHour: number;
 	active: boolean;
 	duration: number;
 	hourBlocks: number;
+
+	// --- JSON 保存メタ情報 ---
+	storageUrl: string;            // Cloud Storage のファイルパスまたはダウンロード URL
+	jsonHash: string;              // SHA256(JSON)
+	jsonSavedAt: Timestamp;        // JSON 保存タイムスタンプ
+
+	// --- Blockchain 保存ステータス ---
+	blockchainStatus: 'pending' | 'confirmed' | 'error';
+	blockchainTxId: string | null;        // トランザクションハッシュ
+	blockchainBlockNumber: number | null; // ブロック番号
+	blockchainConfirmedAt: Timestamp | null; // 確定タイムスタンプ
+	blockchainChainId: string | null;     // チェーン ID
+	blockchainNetworkId: number | null;   // ネットワーク ID
+	blockchainErrorMessage: string | null; // エラー詳細（任意）
 }
+
 
 export interface BillingProof {
 	billingId: string;

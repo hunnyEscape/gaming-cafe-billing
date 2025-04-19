@@ -12,7 +12,11 @@
 │   │   │   │   ├── generateBillingJSON.js
 │   │   │   │   ├── generateBillingJSON.js.map
 │   │   │   │   ├── saveHashToBlockchain.js
-│   │   │   │   └── saveHashToBlockchain.js.map
+│   │   │   │   ├── saveHashToBlockchain.js.map
+│   │   │   │   ├── saveSessionHashToBlockchain.js
+│   │   │   │   ├── saveSessionHashToBlockchain.js.map
+│   │   │   │   ├── saveSessionJson.js
+│   │   │   │   └── saveSessionJson.js.map
 │   │   │   └── sessions
 │   │   │       ├── endSessionHttp.js
 │   │   │       ├── endSessionHttp.js.map
@@ -35,6 +39,7 @@
 │   │       └── storageUtils.js.map
 │   ├── package-lock.json
 │   ├── package.json
+│   ├── project_files.md
 │   ├── src
 │   │   ├── config
 │   │   │   └── constants.ts
@@ -42,10 +47,11 @@
 │   │   ├── services
 │   │   │   ├── billing
 │   │   │   │   ├── generateBillingJSON.ts
-│   │   │   │   └── saveHashToBlockchain.ts
+│   │   │   │   ├── saveHashToBlockchain.ts
+│   │   │   │   ├── saveSessionHashToBlockchain.ts
+│   │   │   │   └── saveSessionJson.ts
 │   │   │   └── sessions
 │   │   │       ├── endSessionHttp.ts
-│   │   │       ├── startSession.ts
 │   │   │       └── startSessionHttp.ts
 │   │   ├── test
 │   │   │   └── sampleData.ts
@@ -56,10 +62,11 @@
 │   │       ├── firestore.ts
 │   │       └── storageUtils.ts
 │   └── tsconfig.json
+├── project_files.md
 ├── project_structure.txt
 ├── tools
 │   ├── verifyHash.js
 │   └── verifyTransaction.js
 └── userBillings_billing_202504_8WKfuu3Rz4bwFq2ta534dGcDPrJ3_pc01_1744008114557_u0m986.json
 
-18 directories, 44 files
+18 directories, 51 files
