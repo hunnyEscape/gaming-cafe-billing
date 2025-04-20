@@ -59,31 +59,3 @@ export interface SessionDocument {
 	blockchainNetworkId: number | null;   // ネットワーク ID
 	blockchainErrorMessage: string | null; // エラー詳細（任意）
 }
-
-export interface BillingProof {
-	billingId: string;
-	userId: string;
-	sessionId: string;
-	seatId: string;
-	fileUrl: string;
-	hash: string;
-	chainId: string;
-	networkId: number;
-	txId: string | null;
-	blockNumber: number | null;
-	status: string;
-	createdAt: Timestamp;
-	confirmedAt: Timestamp | null;
-}
-
-export interface BillingQueueItem {
-	sessionId: string;
-	userId: string;
-	seatId: string;
-	status: string;
-	createdAt: Timestamp;
-	billingId?: string;
-	hashValue?: string;
-	updatedAt?: Timestamp;
-	errorMessage?: string;
-}

@@ -2,8 +2,6 @@ export const COLLECTIONS = {
 	USERS: 'users',
 	SEATS: 'seats',
 	SESSIONS: 'sessions',
-	BILLING_PROOFS: 'billingProofs',
-	BILLING_QUEUE: 'billingQueue'
   };
   
   export const SESSION_STATUS = {
