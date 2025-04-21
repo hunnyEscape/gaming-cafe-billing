@@ -18,5 +18,5 @@ export { saveSessionJsonToBlockchain } from './services/sessions/saveSessionJson
 export { unlockDoor } from './services/door/unlockDoor';
 export { issueNewUserCoupon } from './services/coupons/issueNewUserCoupon';
 export { generateMonthlyInvoices } from './services/invoices/generateMonthlyInvoices';
-export { createStripeInvoiceHandler } from './services/stripe/createStripeInvoiceHandler';
+export { createStripeInvoiceHandler } from './services/invoices/createStripeInvoiceHandler';
 export { updateInvoiceStatus } from './services/invoices/updateInvoiceStatus';
