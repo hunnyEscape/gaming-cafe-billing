@@ -13,6 +13,15 @@ const getStripeCustomerId = async (userId: string): Promise<string> => {
 	return customerId
 }
 
+/** Firestore からデフォルトの PaymentMethod ID を引く */
+const getDefaultPaymentMethodId = async (userId: string): Promise<string> => {
+	const doc = await db.collection('users').doc(userId).get()
+	if (!doc.exists) throw new Error(`User ${userId} not found`)
+	const pm = doc.data()?.stripe?.paymentMethodId
+	if (!pm) throw new Error(`User ${userId} has no default paymentMethodId`)
+	return pm
+}
+
 /** 月間合計時間×単価−割引 をまとめて 1 件だけ作成 */
 const createInvoiceLineItemAggregate = async (
 	stripeCustomerId: string,
@@ -20,7 +29,6 @@ const createInvoiceLineItemAggregate = async (
 	stripeInvoiceId: string
 ): Promise<void> => {
 	const stripe = getStripe()
-
 	const totalHours = invoiceData.sessions.reduce((sum, s) => sum + (s.hourBlocks ?? 0), 0)
 	const totalAmount = invoiceData.sessions.reduce((sum, s) => sum + (s.hourBlocks ?? 0) * 600, 0)
 	const net = Math.max(totalAmount - (invoiceData.discountAmount ?? 0), 0)
@@ -41,21 +49,25 @@ const createInvoiceLineItemAggregate = async (
 	)
 }
 
-/** メイン：ドラフト → 明細 → 確定 → Firestore 更新 */
+/** メイン：ドラフト → 明細 → 確定 → 自動支払い → Firestore 更新 */
 export const createStripeInvoiceForUser = async (
 	invoiceData: InvoiceDocument,
 	invoiceId: string
 ): Promise<string> => {
 	try {
-		// 型を明示的に絞る（非nullアサーションを避ける方法）
+		// periodString を確定
 		const periodString = invoiceData.periodString ?? '不明な月'
 
-		const stripeCust = await getStripeCustomerId(invoiceData.userId)
+		// Stripe customer ID と default PM を取得
+		const stripeCustomerId = await getStripeCustomerId(invoiceData.userId)
+		const defaultPmId = await getDefaultPaymentMethodId(invoiceData.userId)
 
+		// 1) ドラフト請求書作成（自動徴収モード & デフォルトPM指定）
 		const draft = await getStripe().invoices.create({
-			customer: stripeCust,
-			auto_advance: false,
+			customer: stripeCustomerId,
 			collection_method: 'charge_automatically',
+			default_payment_method: defaultPmId,
+			auto_advance: false,
 			metadata: {
 				firebaseInvoiceId: invoiceId,
 				periodString
@@ -63,22 +75,38 @@ export const createStripeInvoiceForUser = async (
 			description: `利用料金 ${periodString}`
 		})
 
-		// Stripe の型が id?: string のため、ここで保証
 		if (!draft.id) {
 			throw new Error('Stripe invoice の ID が取得できませんでした')
 		}
-		const stripeInvoiceId: string = draft.id // ← ここで型が string に確定
+		const stripeInvoiceId = draft.id
 
+		// 2) 明細を一件だけ作成
 		await createInvoiceLineItemAggregate(
-			stripeCust,
+			stripeCustomerId,
 			invoiceData,
 			stripeInvoiceId
 		)
 
+		// 3) 確定（Finalize）
 		const finalized = await retryStripeOperation(() =>
 			getStripe().invoices.finalizeInvoice(stripeInvoiceId)
 		)
 
+		if (!finalized.id) {
+			throw new Error('Stripe finalized invoice に ID がありません')
+		}
+		// 4) finalized.id をローカル変数に取り出して undefined を排除
+		const finalInvoiceId = finalized.id
+		if (!finalInvoiceId) {
+			throw new Error('Stripe finalized invoice に ID がありません')
+		}
+
+		// 5) 自動支払いをトリガー
+		await retryStripeOperation(() =>
+			getStripe().invoices.pay(finalInvoiceId)  // ← ここに finalInvoiceId:string を渡す
+		)
+
+		// 5) Firestore 更新
 		await db.collection('invoices').doc(invoiceId).update({
 			status: 'pending',
 			stripeInvoiceId: finalized.id,
@@ -86,11 +114,7 @@ export const createStripeInvoiceForUser = async (
 			updatedAt: admin.firestore.FieldValue.serverTimestamp()
 		})
 
-		const finalInvoiceId = finalized.id
-		if (!finalInvoiceId) {
-			throw new Error('Stripe finalized invoice に ID がありません')
-		}
-		return finalInvoiceId
+		return finalized.id
 
 	} catch (err) {
 		const msg = handleStripeError(err, `createStripeInvoiceForUser:${invoiceId}`)
