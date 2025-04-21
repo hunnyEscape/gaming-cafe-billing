@@ -35,14 +35,16 @@ async function generateMonthlyInvoicesLogic() {
 	const db = admin.firestore();
 
 	try {
-		// 前月の期間を計算
+		// 前月の期間を計算（日本時間基準）
 		const now = new Date();
 		const currentYear = now.getFullYear();
 		const currentMonth = now.getMonth(); // 0-11
 
-		// 前月の開始日と終了日
-		const startDate = new Date(currentYear, currentMonth - 1, 1);
-		const endDate = new Date(currentYear, currentMonth, 0, 23, 59, 59, 999);
+		// 日本時間の前月1日 00:00:00 → UTC時間では前日の15:00:00
+		const startDate = new Date(currentYear, currentMonth - 1, 1, -9, 0, 0, 0);
+
+		// 日本時間の前月末日 23:59:59.999 → UTC時間では前日の14:59:59.999
+		const endDate = new Date(currentYear, currentMonth, 0, 14, 59, 59, 999);
 
 		functions.logger.info(`Generating invoices for period: ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
@@ -51,7 +53,7 @@ async function generateMonthlyInvoicesLogic() {
 		const periodEnd = admin.firestore.Timestamp.fromDate(endDate);
 
 		// 前月の期間文字列 (YYYY-MM形式)
-		const periodString = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+		const periodString = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`;
 
 		// 期間文字列を使って、既に処理済みかチェック
 		const existingInvoicesQuery = await db.collection(COLLECTIONS.INVOICES)
