@@ -9,3 +9,5 @@ export { endSessionHttp } from './services/sessions/endSessionHttp';
 export { saveSessionJsonToBlockchain } from './services/sessions/saveSessionJsonToBlockchain';
 export { unlockDoor } from './services/door/unlockDoor';
 export { issueNewUserCoupon } from './services/coupons/issueNewUserCoupon';
+//export { issueRevisitCoupon } from './services/coupons/issueRevisitCoupon';
+//export { issueMultiSeatCoupon } from './services/coupons/issueMultiSeatCoupon';
