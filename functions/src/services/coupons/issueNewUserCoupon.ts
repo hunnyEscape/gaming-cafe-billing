@@ -9,78 +9,60 @@ export const issueNewUserCoupon = functions.firestore
 	.document('users/{userId}')
 	.onCreate(async (snapshot, context) => {
 		const userId = context.params.userId;
-		console.log(`New user created: ${userId}, checking for coupon eligibility`);
+		console.log(`New user created: ${userId}, issuing initial coupon`);
 
 		try {
-			// ユーザーが既に初回クーポンを持っているか確認
-			const existingCouponsQuery = await admin.firestore()
+			// 1) すでに利用可能なクーポンを持っていないかチェック
+			const existing = await admin.firestore()
 				.collection('userCoupons')
 				.where('userId', '==', userId)
 				.where('status', '==', 'available')
+				.limit(1)
 				.get();
 
-			if (!existingCouponsQuery.empty) {
-				console.log(`User ${userId} already has a coupon`);
-				return { success: true, message: 'ユーザーは既にクーポンを持っています', couponExists: true };
+			if (!existing.empty) {
+				console.log(`User ${userId} already has an available coupon`);
+				return { success: true, message: 'ユーザーはすでにクーポンを持っています', couponExists: true };
 			}
 
-			// クーポン定義を取得
-			const couponDefinitionsQuery = await admin.firestore()
+			// 2) “WELCOME” 定義を直接取得
+			const defDoc = await admin.firestore()
 				.collection('couponDefinitions')
-				.where('isActive', '==', true)
+				.doc('WELCOME')
 				.get();
 
-			if (couponDefinitionsQuery.empty) {
-				console.log('No active coupon definitions found');
-				return { success: false, message: '有効なクーポン定義が見つかりませんでした' };
+			if (!defDoc.exists) {
+				console.error('WELCOME 定義が見つかりません');
+				return { success: false, message: 'クーポン定義がありません' };
 			}
 
-			// クーポン定義を配列に変換
-			const couponDefinitions = couponDefinitionsQuery.docs.map(doc => {
-				const data = doc.data();
-				return {
-					id: doc.id,
-					code: data.code,
-					name: data.name,
-					description: data.description,
-					discountValue: data.discountValue,
-					validityPeriod: data.validityPeriod,
-					isActive: data.isActive
-				};
-			});
-
-			// 最初のクーポン定義を使用
-			const couponToIssue = couponDefinitions[0];
-
-			// クーポン発行
+			const def = defDoc.data()!;
+			// 3) 発行レコードを組み立て
 			const now = admin.firestore.Timestamp.now();
-
-			// ユーザークーポンの作成
 			const userCoupon = {
 				userId,
-				name: couponToIssue.name,
-				code: couponToIssue.code,
-				description: couponToIssue.description,
-				discountValue: couponToIssue.discountValue,
-				status: 'available',
-				issuedAt: now
+				name: def.name,
+				code: def.code,
+				description: def.description,
+				discountValue: def.discountValue,
+				status: 'available' as const,
+				issuedAt: now,
+				// validityPeriod が空文字の場合は有効期限未設定
+				// 必要であれば expiresAt フィールドも追加できます
 			};
 
-			// Firestoreに保存
-			const docRef = await admin.firestore().collection('userCoupons').add(userCoupon);
+			// 4) Firestore に保存
+			const docRef = await admin.firestore()
+				.collection('userCoupons')
+				.add(userCoupon);
 
-			const issuedCoupon = {
-				id: docRef.id,
-				...userCoupon
-			};
-
-			console.log(`Coupon issued to user ${userId}: ${issuedCoupon.id}`);
-
+			console.log(`Issued WELCOME coupon to ${userId}, couponId=${docRef.id}`);
 			return {
 				success: true,
 				message: 'クーポンが発行されました',
-				coupon: issuedCoupon
+				coupon: { id: docRef.id, ...userCoupon }
 			};
+
 		} catch (error) {
 			console.error('Error issuing coupon:', error);
 			throw error;

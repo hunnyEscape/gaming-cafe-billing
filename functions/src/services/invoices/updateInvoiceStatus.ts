@@ -1,5 +1,5 @@
 import * as admin from 'firebase-admin';
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v1';
 import { getStripe, handleStripeError } from '../stripe/stripeClient';
 
 // Firestoreへの参照
@@ -14,8 +14,8 @@ export const updateInvoiceStatus = functions.https.onRequest(async (req, res) =>
 
 	try {
 		// Webhookシークレットを環境変数から取得
-		const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
+		//const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+		const webhookSecret = functions.config().stripe?.webhook_secret;
 		if (!webhookSecret) {
 			console.error('Stripe webhook secret is not configured');
 			res.status(500).send('Webhook Error: Missing webhook secret');
