@@ -33,30 +33,49 @@ const unlockDoorHandler = async (req: Request, res: Response): Promise<void> => 
 		return;
 	}
 
-	/* --- userId (= code) --- */
-	const { code } = req.body as { code?: string };
-	if (!code) {
-		res.status(400).json({ success: false, message: 'QRコードが必要です' });
+	/* --- memberID 取得 --- */
+	const { memberID } = req.body as { memberID?: string };
+	if (!memberID) {
+		res.status(400).json({ success: false, message: '会員IDが必要です' });
 		return;
 	}
 
 	try {
-		const snap = await db.collection('users').doc(code).get();
-		if (!snap.exists) {
-			res.status(404).json({ success: false, message: 'ユーザーが見つかりません' });
-			return;
+		// memberIDがcurrentMemberIdまたはpreviousMemberIdと一致するユーザーを検索
+		const usersRef = db.collection('users');
+		const currentQuery = await usersRef.where('currentMemberId', '==', memberID).limit(1).get();
+
+		// 最初にcurrentMemberIdで検索
+		let userDoc = null;
+		let userId = null;
+
+		if (!currentQuery.empty) {
+			userDoc = currentQuery.docs[0].data();
+			userId = currentQuery.docs[0].id;
+		} else {
+			// currentMemberIdで見つからない場合、previousMemberIdで検索
+			const previousQuery = await usersRef.where('previousMemberId', '==', memberID).limit(1).get();
+
+			if (!previousQuery.empty) {
+				userDoc = previousQuery.docs[0].data();
+				userId = previousQuery.docs[0].id;
+			} else {
+				res.status(404).json({ success: false, message: '有効な会員IDが見つかりません' });
+				return;
+			}
 		}
-		const user = snap.data()!;
-		if (!user.registrationCompleted) {
+
+		// 登録完了チェック
+		if (!userDoc.registrationCompleted) {
 			res.status(403).json({ success: false, message: '登録が完了していません' });
 			return;
 		}
 
 		/* --- SESAME 解錠 --- */
-		await unlockSesame(user.email || 'Firestore User');
+		await unlockSesame(userDoc.email || 'Firestore User');
 
 		/* --- ログ保存 --- */
-		await logAccess(code, user.email);
+		await logAccess(userId, userDoc.email);
 
 		res.status(200).json({ success: true, message: 'ドアの解錠に成功しました' });
 	} catch (err: any) {
@@ -92,7 +111,7 @@ function generateSign(secret: string): string {
 	const time = Math.floor(Date.now() / 1000);
 	const buf = Buffer.allocUnsafe(4);
 	buf.writeUInt32LE(time);
-	return aesCmac(key, buf.slice(1));   // 3 byte
+	return aesCmac(key, buf.slice(1));   // 3 byte
 }
 
 async function logAccess(userId: string, email: string) {

@@ -11,7 +11,6 @@ export interface UserDocument {
 	registrationCompletedAt?: string;
 	registrationStep?: number;
 	// 追加フィールド
-	// UserDocument拡張フィールド
 	currentMemberId: string;      // 現在の会員ID
 	previousMemberId: string;     // 前の会員ID
 	memberIdUpdatedAt: TimestampOrString; // 最終更新日時
