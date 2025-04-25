@@ -20,3 +20,5 @@ export { issueNewUserCoupon } from './services/coupons/issueNewUserCoupon';
 export { generateMonthlyInvoices } from './services/invoices/generateMonthlyInvoices';
 export { createStripeInvoiceHandler } from './services/invoices/createStripeInvoiceHandler';
 export { updateInvoiceStatus } from './services/invoices/updateInvoiceStatus';
+export { initMemberIdOnCreate } from './services/memberId/generateMemberId';
+export { updateMemberIds} from './services/memberId/updateMemberIds';

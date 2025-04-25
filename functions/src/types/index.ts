@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase-admin/firestore';
-
+type TimestampOrString = Timestamp | string;
 export interface UserDocument {
 	uid: string;
 	email: string | null;
@@ -10,6 +10,11 @@ export interface UserDocument {
 	registrationCompleted: boolean;
 	registrationCompletedAt?: string;
 	registrationStep?: number;
+	// 追加フィールド
+	// UserDocument拡張フィールド
+	currentMemberId: string;      // 現在の会員ID
+	previousMemberId: string;     // 前の会員ID
+	memberIdUpdatedAt: TimestampOrString; // 最終更新日時
 	// Stripe情報
 	stripe?: {
 		customerId?: string;
