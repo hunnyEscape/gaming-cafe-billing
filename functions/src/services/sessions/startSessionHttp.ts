@@ -28,16 +28,40 @@ export const startSessionHttp = functions.https.onRequest({ secrets: [GCF_API_KE
 	}
 
 	try {
-		const { userId, seatId } = req.body;
-		if (!userId || !seatId) {
-			res.status(400).json({ success: false, error: 'userId and seatId are required.' });
+		const { memberID, seatId } = req.body;
+		if (!memberID || !seatId) {
+			res.status(400).json({ success: false, error: 'memberID and seatId are required.' });
 			return;
 		}
 
 		const db = admin.firestore();
-		const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
-		if (!userDoc.exists) {
-			res.status(404).json({ success: false, error: 'User not found.' });
+
+		// memberIDでユーザーを検索（currentMemberIdまたはpreviousMemberId）
+		const usersRef = db.collection(COLLECTIONS.USERS);
+		const currentQuery = await usersRef.where('currentMemberId', '==', memberID).limit(1).get();
+
+		let userDoc = null;
+		let userId = '';
+
+		if (!currentQuery.empty) {
+			userDoc = currentQuery.docs[0];
+			userId = userDoc.id;
+		} else {
+			// currentMemberIdで見つからない場合、previousMemberIdで検索
+			const previousQuery = await usersRef.where('previousMemberId', '==', memberID).limit(1).get();
+
+			if (!previousQuery.empty) {
+				userDoc = previousQuery.docs[0];
+				userId = userDoc.id;
+			} else {
+				res.status(404).json({ success: false, error: '有効な会員IDが見つかりません。' });
+				return;
+			}
+		}
+
+		// ユーザーIDが空でないことを確認（念のため）
+		if (!userId) {
+			res.status(500).json({ success: false, error: 'ユーザーIDの取得に失敗しました。' });
 			return;
 		}
 
@@ -66,16 +90,12 @@ export const startSessionHttp = functions.https.onRequest({ secrets: [GCF_API_KE
 
 		const result = await db.runTransaction(async tx => {
 			const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-			// JST補正済 Timestamp を作成
-			//const now = new Date();
-			//const jstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-			//const startTime = admin.firestore.Timestamp.fromDate(jstDate);
 			const now = new Date(); // UTCのまま
 			const startTime = admin.firestore.Timestamp.fromDate(now);
-			
+
 			const sessionData: SessionDocument = {
 				sessionId,
-				userId,
+				userId, // この時点でuserIdは空文字列ではないことが確認済み
 				seatId,
 				startTime,
 				endTime: '',
