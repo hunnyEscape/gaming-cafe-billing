@@ -1,13 +1,30 @@
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import { COLLECTIONS } from '../../config/constants';
 import { processUserSessions } from './processUserSessions';
 
 /**
  * 月次請求書生成Cloud Function
- * HTTP経由で手動または外部スケジューラから実行可能
+ * 毎月1日の00:00に自動実行 (日本時間)
  */
-export const generateMonthlyInvoices = functions.https.onRequest(async (req, res) => {
+export const generateMonthlyInvoices = functions.region('asia-northeast1')
+	.pubsub.schedule('0 0 1 * *')  // 毎月1日の00:00 (UTC)
+	.timeZone('Asia/Tokyo')  // 日本時間で設定
+	.onRun(async (_context) => {
+		try {
+			const result = await generateMonthlyInvoicesLogic();
+			functions.logger.info('Monthly invoice generation completed', result);
+			return null;  // Firebaseの関数では成功時にnullを返す
+		} catch (error) {
+			functions.logger.error('Error in generateMonthlyInvoices:', error);
+			return null;  // エラー発生時も成功として扱い、再実行を防止
+		}
+	});
+
+/**
+ * HTTPトリガーバージョン (手動実行用)
+ */
+export const generateMonthlyInvoicesHttp = functions.https.onRequest(async (req, res) => {
 	try {
 		// POSTリクエストのみ受け付ける
 		if (req.method !== 'POST') {
@@ -20,7 +37,7 @@ export const generateMonthlyInvoices = functions.https.onRequest(async (req, res
 		const result = await generateMonthlyInvoicesLogic();
 		res.status(200).json(result);
 	} catch (error) {
-		functions.logger.error('Error in generateMonthlyInvoices:', error);
+		functions.logger.error('Error in generateMonthlyInvoicesHttp:', error);
 		res.status(500).json({
 			success: false,
 			error: error instanceof Error ? error.message : 'Unknown error'
